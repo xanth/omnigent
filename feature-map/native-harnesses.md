@@ -349,6 +349,13 @@ Cross-harness journeys:
   ID beginning with `omnigent/`. The selected allowlisted ID stays intact;
   unlisted IDs remain rejected. Browser acceptance is separate: select the row
   in the new-session composer, launch, and confirm Pi reports that exact model.
+- **`model-and-effort`, Pi thinking compatibility (own environment):**
+  With the CI-pinned Pi on PATH, run
+  `uv run --no-sync pytest tests/e2e/omnigent/test_pi_thinking_compatibility_e2e.py --reruns 0 -q`.
+  Real SDK CLI and native provider-launch/print paths send requests to the shared
+  mock provider: Opus 5.5 clamps off to adaptive/low, Sonnet honors high, and
+  Haiku retains off. Catalog and alias cases use `tests/test_pi_model_compatibility.py`.
+  This proves request serialization, not browser/TUI controls or live serving compatibility.
 - **`model-and-effort`:**
   `tests/e2e_ui/start_session/test_native_picker_cli_parity.py::test_claude_picker_omits_aliases_the_cli_picker_does_not_offer`,
   `tests/e2e_ui/start_session/test_native_picker_cli_parity.py::test_codex_picker_offers_the_clis_catalog_and_default`
