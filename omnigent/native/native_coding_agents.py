@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from omnigent._platform import installed_interactive_shells
@@ -113,6 +114,11 @@ def native_shell_terminal_spec() -> dict[str, dict[str, object]]:
     :returns: A ``terminals:`` mapping, e.g. ``{"zsh": {...}, "bash": {...}}``,
         with the user's login shell first.
     """
+    from omnigent.config import configured_interactive_shells
+
+    # A CLI-local runner has no host inventory to inherit, so it reads the
+    # user's configured additions itself.
+    extra = configured_interactive_shells()
     return {
         shell: {
             "command": shell,
@@ -123,12 +129,14 @@ def native_shell_terminal_spec() -> dict[str, dict[str, object]]:
                 "sandbox": {"type": "none"},
             },
         }
-        for shell in installed_interactive_shells()
+        for shell in installed_interactive_shells(extra=extra)
     }
 
 
 def native_shell_terminal_specs(
     shells: list[str] | tuple[str, ...],
+    *,
+    extra: Sequence[str] = (),
 ) -> dict[str, TerminalEnvSpec]:
     """Build parsed terminal specs for a host's ordered shell inventory.
 
@@ -140,7 +148,7 @@ def native_shell_terminal_specs(
 
     return {
         shell: TerminalEnvSpec(
-            command=_resolve_interactive_shell(shell) or shell,
+            command=_resolve_interactive_shell(shell, extra=extra) or shell,
             allow_cwd_override=True,
             os_env=OSEnvSpec(
                 type="caller_process",

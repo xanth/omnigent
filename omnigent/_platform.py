@@ -21,7 +21,7 @@ import os
 import platform
 import shutil
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from contextlib import suppress
 from pathlib import Path
 
@@ -212,28 +212,87 @@ def default_shell_argv(command: str) -> list[str]:
 
 
 #: Interactive shells we honor from ``$SHELL`` for a user terminal. Anything
-#: outside this set (or a ``$SHELL`` that doesn't resolve on PATH) falls back to
-#: bash for a predictable pane.
+#: outside this set — and outside the user's configured additions, see
+#: :func:`normalize_extra_shell_names` — (or a ``$SHELL`` that doesn't resolve
+#: on PATH) falls back to bash for a predictable pane.
 _KNOWN_INTERACTIVE_SHELLS = frozenset({"bash", "zsh", "fish", "sh", "dash", "ksh", "tcsh"})
 
 #: Mainstream interactive shells we proactively offer as launch choices (the
 #: "New shell" picker), in display order. The user's ``$SHELL`` is always
 #: offered first regardless (see :func:`installed_interactive_shells`); this is
-#: the set of well-known alternatives we surface beyond it.
+#: the set of well-known alternatives we surface beyond it. Configured extras
+#: are offered after these.
 _OFFERED_INTERACTIVE_SHELLS = ("bash", "zsh", "fish")
 
+#: Upper bound on a configured shell name. Long enough for real binaries
+#: (``pwsh-preview``) without inviting pathological config values.
+_MAX_SHELL_NAME_LENGTH = 64
 
-def normalize_interactive_shells(shells: object) -> list[str]:
-    """Return supported shell basenames in input order, without duplicates."""
+#: Non-alphanumeric characters a configured shell name may contain internally.
+_SHELL_NAME_PUNCTUATION = frozenset({".", "_", "-"})
+
+
+def normalize_extra_shell_names(values: object) -> tuple[str, ...]:
+    """Return user-configured shell basenames that are safe to resolve.
+
+    Users extend the built-in allowlist (:data:`_KNOWN_INTERACTIVE_SHELLS`)
+    with shells Omnigent ships no special support for — ``pwsh``, ``nu``,
+    ``elvish``. Only the *name* is configurable: resolution still runs through
+    :func:`_resolve_interactive_shell`, so a configured name that names no
+    executable is simply never offered, and a configured name can never smuggle
+    in a path or arguments.
+
+    Invalid entries are dropped rather than raising: one malformed config value
+    must not cost a user their terminal.
+
+    :param values: Raw config value, expected to be a list of strings.
+    :returns: Deduped, validated basenames in input order.
+    """
+    if not isinstance(values, (list, tuple)):
+        return ()
+    normalized: list[str] = []
+    for value in values:
+        if not isinstance(value, str):
+            continue
+        name = value.strip()
+        if not name or name in normalized or len(name) > _MAX_SHELL_NAME_LENGTH:
+            continue
+        # A bare ASCII basename only: no directories, no leading dot, no shell
+        # metacharacters, nothing that could survive into an argv as anything
+        # other than a program name.
+        if not name.isascii() or os.path.basename(name) != name:
+            continue
+        if not name[0].isalnum() or not name[-1].isalnum():
+            continue
+        if any(not (char.isalnum() or char in _SHELL_NAME_PUNCTUATION) for char in name):
+            continue
+        normalized.append(name)
+    return tuple(normalized)
+
+
+def _allowed_interactive_shells(extra: Sequence[str] = ()) -> frozenset[str]:
+    """Return the effective allowlist: built-in shells plus validated extras."""
+    if not extra:
+        return _KNOWN_INTERACTIVE_SHELLS
+    return _KNOWN_INTERACTIVE_SHELLS | frozenset(normalize_extra_shell_names(extra))
+
+
+def normalize_interactive_shells(
+    shells: object,
+    *,
+    extra: Sequence[str] = (),
+) -> list[str]:
+    """Return supported shell basenames in input order, without duplicates.
+
+    :param shells: Raw inventory, expected to be a list/tuple of basenames.
+    :param extra: User-configured shell names to honor beyond the built-ins.
+    """
     if not isinstance(shells, (list, tuple)):
         return []
+    allowed = _allowed_interactive_shells(extra)
     normalized: list[str] = []
     for shell in shells:
-        if (
-            isinstance(shell, str)
-            and shell in _KNOWN_INTERACTIVE_SHELLS
-            and shell not in normalized
-        ):
+        if isinstance(shell, str) and shell in allowed and shell not in normalized:
             normalized.append(shell)
     return normalized
 
@@ -243,10 +302,18 @@ def normalize_interactive_shells(shells: object) -> list[str]:
 #: launched from a GUI / ``launchd`` / minimal-env context inherits a stripped
 #: ``PATH`` that omits ``/bin`` (or ``/usr/bin``), where the system shells live
 #: — so a bare ``shutil.which("zsh")`` misses them there even though they exist.
-_INTERACTIVE_SHELL_DIRS = ("/bin", "/usr/bin", "/usr/local/bin", "/opt/homebrew/bin")
+_INTERACTIVE_SHELL_DIRS = (
+    "/bin",
+    "/usr/bin",
+    "/usr/local/bin",
+    "/opt/homebrew/bin",
+    # Nix profiles: a nix-darwin/NixOS login shell lives here, not in /bin.
+    "/run/current-system/sw/bin",
+    "/nix/var/nix/profiles/default/bin",
+)
 
 
-def _resolve_interactive_shell(name: str) -> str | None:
+def _resolve_interactive_shell(name: str, *, extra: Sequence[str] = ()) -> str | None:
     """Resolve an interactive-shell basename to an executable, off ``PATH`` too.
 
     Accepts known basenames only. A matching executable absolute ``$SHELL``
@@ -257,11 +324,12 @@ def _resolve_interactive_shell(name: str) -> str | None:
     on the daemon's ``PATH``.
 
     :param name: A shell basename such as ``"zsh"`` or ``"bash"``.
+    :param extra: User-configured shell names to honor beyond the built-ins.
     :returns: An executable path, or ``None`` when the shell isn't installed.
     """
     import shutil
 
-    if name not in _KNOWN_INTERACTIVE_SHELLS or os.path.basename(name) != name:
+    if name not in _allowed_interactive_shells(extra) or os.path.basename(name) != name:
         return None
 
     login_shell = os.environ.get("SHELL", "").strip()
@@ -283,7 +351,7 @@ def _resolve_interactive_shell(name: str) -> str | None:
     return None
 
 
-def default_interactive_shell() -> str:
+def default_interactive_shell(*, extra: Sequence[str] = ()) -> str:
     """
     Basename of the user's login shell for an interactive terminal.
 
@@ -293,6 +361,7 @@ def default_interactive_shell() -> str:
     back to ``"bash"``. Returns a basename for the host inventory; the runner
     on that host resolves the launch path and honors the same ``$SHELL``.
 
+    :param extra: User-configured shell names to honor beyond the built-ins.
     :returns: A shell basename such as ``"zsh"``, ``"fish"``, or ``"bash"``.
     """
     if IS_WINDOWS:
@@ -301,18 +370,18 @@ def default_interactive_shell() -> str:
 
     shell = os.environ.get("SHELL", "").strip()
     name = os.path.basename(shell)
-    if name in _KNOWN_INTERACTIVE_SHELLS:
+    if name in _allowed_interactive_shells(extra):
         # ``$SHELL`` is already an absolute executable path — trust it directly
         # rather than re-resolving its basename against a ``PATH`` that may be
         # stripped, so the login shell is honored even on a frozen-PATH daemon.
         if os.path.isabs(shell) and os.path.isfile(shell) and os.access(shell, os.X_OK):
             return name
-        if _resolve_interactive_shell(name):
+        if _resolve_interactive_shell(name, extra=extra):
             return name
     return "bash"
 
 
-def installed_interactive_shells() -> list[str]:
+def installed_interactive_shells(*, extra: Sequence[str] = ()) -> list[str]:
     """
     Ordered, deduped shell basenames to offer for a new interactive terminal.
 
@@ -323,16 +392,18 @@ def installed_interactive_shells() -> list[str]:
     off ``PATH``). Always non-empty (the default is always present, and bash is
     the ultimate fallback).
 
+    :param extra: User-configured shell names to offer beyond the built-ins,
+        appended after the mainstream alternatives in configured order.
     :returns: Basenames such as ``["zsh", "bash", "fish"]`` — the default first.
     """
-    ordered = [default_interactive_shell()]
+    ordered = [default_interactive_shell(extra=extra)]
     if IS_WINDOWS:
         # Native tmux/PTY terminals are unsupported on Windows anyway; the lone
         # bash default from above is all we can meaningfully offer.
         return ordered
 
-    for name in _OFFERED_INTERACTIVE_SHELLS:
-        if name not in ordered and _resolve_interactive_shell(name):
+    for name in (*_OFFERED_INTERACTIVE_SHELLS, *normalize_extra_shell_names(extra)):
+        if name not in ordered and _resolve_interactive_shell(name, extra=extra):
             ordered.append(name)
     return ordered
 

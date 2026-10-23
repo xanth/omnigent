@@ -272,6 +272,33 @@ def save_global_config(
     os.replace(tmp, resolved)
 
 
+#: User config key holding extra interactive shell basenames to offer.
+ADDITIONAL_INTERACTIVE_SHELLS_KEY = "additional_interactive_shells"
+
+
+def configured_interactive_shells(path: Path | None = None) -> tuple[str, ...]:
+    """Return the user's configured extra interactive shell basenames.
+
+    Read from **user-level** config only. A project's ``.omnigent/config.yaml``
+    must not be able to add shells to a host's terminal inventory: that keeps
+    this alongside the other user-owned launch settings (server selection,
+    harness executables and arguments) that :func:`_merge_effective_config`
+    deliberately refuses to take from a project.
+
+    :param path: Optional override for the user config path, for tests.
+    :returns: Deduped, validated shell basenames in configured order.
+    """
+    from omnigent._platform import normalize_extra_shell_names
+
+    try:
+        raw = load_global_config(path)
+    except (OSError, yaml.YAMLError):
+        # Shell discovery must survive an unreadable or malformed config.
+        _log.warning("Ignoring unreadable user config while reading configured shells")
+        return ()
+    return normalize_extra_shell_names(raw.get(ADDITIONAL_INTERACTIVE_SHELLS_KEY))
+
+
 def _github_accounts(cfg: _Config) -> dict[str, object]:
     """Return the ``github.accounts`` mapping from *cfg* (empty when absent)."""
     github = cfg.get("github")

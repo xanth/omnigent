@@ -127,7 +127,7 @@ def test_native_shell_terminal_spec_offers_installed_shells_default_first(
     """
     monkeypatch.setattr(
         "omnigent.native.native_coding_agents.installed_interactive_shells",
-        lambda: ["fish", "bash", "zsh"],
+        lambda *, extra=(): ["fish", "bash", "zsh"],
     )
     spec = native_shell_terminal_spec()
     assert list(spec) == ["fish", "bash", "zsh"]
@@ -147,7 +147,7 @@ def test_native_shell_terminal_spec_falls_back_to_bash(
     """The materialized spec retains discovery's non-empty bash fallback."""
     monkeypatch.setattr(
         "omnigent.native.native_coding_agents.installed_interactive_shells",
-        lambda: ["bash"],
+        lambda *, extra=(): ["bash"],
     )
     spec = native_shell_terminal_spec()
     assert list(spec) == ["bash"]
@@ -160,7 +160,7 @@ def test_native_shell_terminal_specs_builds_runtime_specs(
     """A runner can replace the fallback with parsed host terminal specs."""
     monkeypatch.setattr(
         "omnigent._platform._resolve_interactive_shell",
-        lambda shell: f"/resolved/{shell}",
+        lambda shell, *, extra=(): f"/resolved/{shell}",
     )
     spec = native_shell_terminal_specs(["zsh", "bash"])
     assert list(spec) == ["zsh", "bash"]

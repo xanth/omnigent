@@ -49,6 +49,10 @@ RUNNER_LAUNCH_HARNESS_ENV_VAR = "OMNIGENT_RUNNER_LAUNCH_HARNESS"
 # JSON-encoded ordered shell inventory discovered by the host daemon. The
 # runner uses this exact snapshot for native wrapper terminal declarations.
 RUNNER_INTERACTIVE_SHELLS_ENV_VAR = "OMNIGENT_RUNNER_INTERACTIVE_SHELLS"
+# JSON-encoded extra interactive shell basenames the user configured on the
+# host. The runner needs these to re-validate the inventory above: without
+# them it would drop any shell outside the built-in allowlist.
+RUNNER_EXTRA_INTERACTIVE_SHELLS_ENV_VAR = "OMNIGENT_RUNNER_EXTRA_INTERACTIVE_SHELLS"
 RUNNER_TUNNEL_TOKEN_HEADER = "X-Omnigent-Runner-Tunnel-Token"
 # Sentinel ``Origin`` header that the project's own non-browser WebSocket
 # clients (runner -> server tunnel, host/daemon -> server tunnel,

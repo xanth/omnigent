@@ -78,7 +78,7 @@ def test_default_interactive_shell_falls_back_to_bash(
     # Resolution is fully hermetic: neither PATH nor the standard shell dirs
     # yield anything, so only $SHELL's own absolute path could rescue a value.
     monkeypatch.setattr("shutil.which", lambda name: None)
-    monkeypatch.setattr(_platform, "_resolve_interactive_shell", lambda name: None)
+    monkeypatch.setattr(_platform, "_resolve_interactive_shell", lambda name, *, extra=(): None)
     monkeypatch.setattr(os.path, "isabs", lambda path: False)
     # Unset $SHELL → bash.
     monkeypatch.delenv("SHELL", raising=False)
@@ -99,6 +99,76 @@ def test_normalize_interactive_shells_filters_and_deduplicates() -> None:
         "bash",
     ]
     assert _platform.normalize_interactive_shells("bash") == []
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "/usr/bin/pwsh",  # a path, not a basename
+        "../pwsh",
+        ".hidden",  # leading dot
+        "pwsh-",  # trailing punctuation
+        "pw sh",  # whitespace
+        "pwsh;rm",  # shell metacharacter
+        "pwsh\u00e9",  # non-ASCII
+        "p" * 65,  # over the length cap
+        42,
+    ],
+)
+def test_normalize_extra_shell_names_rejects_unsafe_values(value: object) -> None:
+    """A configured shell name is a bare ASCII basename or it is dropped."""
+    assert _platform.normalize_extra_shell_names([value]) == ()
+
+
+def test_normalize_extra_shell_names_accepts_and_dedupes() -> None:
+    """Real shell names survive, in configured order, without duplicates."""
+    assert _platform.normalize_extra_shell_names(
+        ["pwsh", "nu", "pwsh", " elvish ", "pwsh-preview"]
+    ) == ("pwsh", "nu", "elvish", "pwsh-preview")
+    # A non-list config value is ignored rather than raising.
+    assert _platform.normalize_extra_shell_names("pwsh") == ()
+
+
+def test_normalize_interactive_shells_honors_configured_extras() -> None:
+    """A configured shell passes the allowlist; an unconfigured one does not."""
+    assert _platform.normalize_interactive_shells(["pwsh", "zsh"]) == ["zsh"]
+    assert _platform.normalize_interactive_shells(["pwsh", "zsh"], extra=["pwsh"]) == [
+        "pwsh",
+        "zsh",
+    ]
+    # Extras are themselves validated: a path never becomes allowlisted.
+    assert _platform.normalize_interactive_shells(["/usr/bin/pwsh"], extra=["/usr/bin/pwsh"]) == []
+
+
+@pytest.mark.posix_only
+def test_default_interactive_shell_honors_configured_login_shell(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A configured shell is honored from ``$SHELL``; otherwise bash wins."""
+    monkeypatch.setattr(_platform, "_resolve_interactive_shell", _fake_resolver({"pwsh"}))
+    monkeypatch.setattr(os.path, "isabs", lambda path: False)
+    monkeypatch.setenv("SHELL", "/opt/homebrew/bin/pwsh")
+    assert _platform.default_interactive_shell() == "bash"
+    assert _platform.default_interactive_shell(extra=["pwsh"]) == "pwsh"
+
+
+@pytest.mark.posix_only
+def test_installed_interactive_shells_offers_configured_extras_last(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Configured extras follow the mainstream alternatives, in config order."""
+    monkeypatch.setattr(
+        _platform, "_resolve_interactive_shell", _fake_resolver({"bash", "zsh", "pwsh", "nu"})
+    )
+    monkeypatch.setenv("SHELL", "/bin/zsh")
+    assert _platform.installed_interactive_shells(extra=["pwsh", "nu"]) == [
+        "zsh",
+        "bash",
+        "pwsh",
+        "nu",
+    ]
+    # An extra that resolves nowhere is omitted, like any alternative.
+    assert _platform.installed_interactive_shells(extra=["elvish"]) == ["zsh", "bash"]
 
 
 @pytest.mark.posix_only
@@ -158,7 +228,7 @@ def _fake_resolver(installed: set[str]):
     so patching it (not just ``shutil.which``) is what keeps a test from leaking
     whatever shells the host machine actually has installed.
     """
-    return lambda name: f"/usr/bin/{name}" if name in installed else None
+    return lambda name, *, extra=(): f"/usr/bin/{name}" if name in installed else None
 
 
 @pytest.mark.posix_only
@@ -214,7 +284,7 @@ def test_installed_interactive_shells_always_nonempty(
 ) -> None:
     """With nothing resolvable anywhere the bash fallback is still offered alone."""
     monkeypatch.setattr("shutil.which", lambda name: None)
-    monkeypatch.setattr(_platform, "_resolve_interactive_shell", lambda name: None)
+    monkeypatch.setattr(_platform, "_resolve_interactive_shell", lambda name, *, extra=(): None)
     monkeypatch.setattr(os.path, "isabs", lambda path: False)
     monkeypatch.delenv("SHELL", raising=False)
     assert _platform.installed_interactive_shells() == ["bash"]
