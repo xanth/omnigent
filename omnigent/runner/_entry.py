@@ -29,11 +29,7 @@ from typing import TYPE_CHECKING, cast
 import httpx
 from fastapi import FastAPI
 
-from omnigent._platform import (
-    IS_WINDOWS,
-    normalize_extra_shell_names,
-    normalize_interactive_shells,
-)
+from omnigent._platform import IS_WINDOWS, normalize_shell_names
 from omnigent.debug_logging import debug_event, runner_primary_session_id
 from omnigent.inner import _proc
 from omnigent.runner.identity import RUNNER_AUTH_REJECTED_EXIT_CODE
@@ -88,20 +84,6 @@ _logger = logging.getLogger(__name__)
 _runner_auth_factory: Callable[[], str | None] | None = None
 
 
-def _host_extra_interactive_shells_from_env() -> tuple[str, ...]:
-    """Read the user's configured extra shell names from runner wiring."""
-    from omnigent.runner.identity import RUNNER_EXTRA_INTERACTIVE_SHELLS_ENV_VAR
-
-    raw = os.environ.get(RUNNER_EXTRA_INTERACTIVE_SHELLS_ENV_VAR)
-    if raw is None:
-        return ()
-    try:
-        decoded = json.loads(raw)
-    except json.JSONDecodeError:
-        return ()
-    return normalize_extra_shell_names(decoded)
-
-
 def _host_interactive_shells_from_env() -> list[str] | None:
     """Read the host daemon's ordered shell inventory from runner wiring."""
     from omnigent.runner.identity import RUNNER_INTERACTIVE_SHELLS_ENV_VAR
@@ -113,7 +95,9 @@ def _host_interactive_shells_from_env() -> list[str] | None:
         decoded = json.loads(raw)
     except json.JSONDecodeError:
         return None
-    shells = normalize_interactive_shells(decoded, extra=_host_extra_interactive_shells_from_env())
+    # The host's inventory is authoritative: it already applied the allowlist
+    # and the user's configured additions, so only check each name's shape.
+    shells = normalize_shell_names(decoded)
     return shells or None
 
 
@@ -127,9 +111,7 @@ def _apply_host_interactive_shells(spec: AgentSpec) -> None:
     shells = _host_interactive_shells_from_env()
     if shells is None or native_coding_agent_for_agent_name(getattr(spec, "name", None)) is None:
         return
-    spec.terminals = native_shell_terminal_specs(
-        shells, extra=_host_extra_interactive_shells_from_env()
-    )
+    spec.terminals = native_shell_terminal_specs(shells)
 
 
 def _set_runner_auth_factory(factory: Callable[[], str | None] | None) -> None:

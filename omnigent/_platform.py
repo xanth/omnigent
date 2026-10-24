@@ -211,10 +211,15 @@ def default_shell_argv(command: str) -> list[str]:
     return [sh, "-c", command]
 
 
-#: Interactive shells we honor from ``$SHELL`` for a user terminal. Anything
-#: outside this set — and outside the user's configured additions, see
-#: :func:`normalize_extra_shell_names` — (or a ``$SHELL`` that doesn't resolve
-#: on PATH) falls back to bash for a predictable pane.
+#: Interactive shells a host discovers and honors from ``$SHELL`` for a user
+#: terminal. Anything outside this set and the user's configured additions (or a
+#: ``$SHELL`` that doesn't resolve on PATH) falls back to bash for a predictable
+#: pane.
+#:
+#: This is a *discovery* allowlist only. Once a host has discovered its
+#: inventory, that inventory is authoritative for the host: the server, the
+#: session routes and the runner check that each reported name is a safe
+#: basename (:func:`normalize_shell_names`), not that it is one listed here.
 _KNOWN_INTERACTIVE_SHELLS = frozenset({"bash", "zsh", "fish", "sh", "dash", "ksh", "tcsh"})
 
 #: Mainstream interactive shells we proactively offer as launch choices (the
@@ -232,24 +237,26 @@ _MAX_SHELL_NAME_LENGTH = 64
 _SHELL_NAME_PUNCTUATION = frozenset({".", "_", "-"})
 
 
-def normalize_extra_shell_names(values: object) -> tuple[str, ...]:
-    """Return user-configured shell basenames that are safe to resolve.
+def normalize_shell_names(values: object) -> list[str]:
+    """Return the shell basenames in *values* that are safe to pass along.
 
-    Users extend the built-in allowlist (:data:`_KNOWN_INTERACTIVE_SHELLS`)
-    with shells Omnigent ships no special support for — ``pwsh``, ``nu``,
-    ``elvish``. Only the *name* is configurable: resolution still runs through
-    :func:`_resolve_interactive_shell`, so a configured name that names no
-    executable is simply never offered, and a configured name can never smuggle
-    in a path or arguments.
+    Used at two kinds of boundary. A user's configured additions to the
+    discovery allowlist (``pwsh``, ``nu``, ``elvish``) pass through it before a
+    host resolves them. And every hop after a host's discovery — the hello the
+    server stores, the session routes, the runner's wiring — uses it to accept
+    the host's reported inventory: the host already applied the allowlist and the
+    user's additions, so downstream only checks shape, never membership.
 
-    Invalid entries are dropped rather than raising: one malformed config value
-    must not cost a user their terminal.
+    A name that passes can never carry a path or arguments into an argv, and a
+    configured name that names no executable is simply never discovered.
+    Invalid entries are dropped rather than raising: one malformed value must not
+    cost a user their terminal.
 
-    :param values: Raw config value, expected to be a list of strings.
+    :param values: Raw value, expected to be a list of strings.
     :returns: Deduped, validated basenames in input order.
     """
     if not isinstance(values, (list, tuple)):
-        return ()
+        return []
     normalized: list[str] = []
     for value in values:
         if not isinstance(value, str):
@@ -267,32 +274,27 @@ def normalize_extra_shell_names(values: object) -> tuple[str, ...]:
         if any(not (char.isalnum() or char in _SHELL_NAME_PUNCTUATION) for char in name):
             continue
         normalized.append(name)
-    return tuple(normalized)
+    return normalized
 
 
 def _allowed_interactive_shells(extra: Sequence[str] = ()) -> frozenset[str]:
     """Return the effective allowlist: built-in shells plus validated extras."""
     if not extra:
         return _KNOWN_INTERACTIVE_SHELLS
-    return _KNOWN_INTERACTIVE_SHELLS | frozenset(normalize_extra_shell_names(extra))
+    return _KNOWN_INTERACTIVE_SHELLS | frozenset(normalize_shell_names(extra))
 
 
-def normalize_interactive_shells(
-    shells: object,
-    *,
-    extra: Sequence[str] = (),
-) -> list[str]:
-    """Return supported shell basenames in input order, without duplicates.
-
-    :param shells: Raw inventory, expected to be a list/tuple of basenames.
-    :param extra: User-configured shell names to honor beyond the built-ins.
-    """
+def normalize_interactive_shells(shells: object) -> list[str]:
+    """Return built-in shell basenames in input order, without duplicates."""
     if not isinstance(shells, (list, tuple)):
         return []
-    allowed = _allowed_interactive_shells(extra)
     normalized: list[str] = []
     for shell in shells:
-        if isinstance(shell, str) and shell in allowed and shell not in normalized:
+        if (
+            isinstance(shell, str)
+            and shell in _KNOWN_INTERACTIVE_SHELLS
+            and shell not in normalized
+        ):
             normalized.append(shell)
     return normalized
 
@@ -402,7 +404,7 @@ def installed_interactive_shells(*, extra: Sequence[str] = ()) -> list[str]:
         # bash default from above is all we can meaningfully offer.
         return ordered
 
-    for name in (*_OFFERED_INTERACTIVE_SHELLS, *normalize_extra_shell_names(extra)):
+    for name in (*_OFFERED_INTERACTIVE_SHELLS, *normalize_shell_names(extra)):
         if name not in ordered and _resolve_interactive_shell(name, extra=extra):
             ordered.append(name)
     return ordered

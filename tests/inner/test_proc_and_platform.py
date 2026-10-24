@@ -115,29 +115,28 @@ def test_normalize_interactive_shells_filters_and_deduplicates() -> None:
         42,
     ],
 )
-def test_normalize_extra_shell_names_rejects_unsafe_values(value: object) -> None:
-    """A configured shell name is a bare ASCII basename or it is dropped."""
-    assert _platform.normalize_extra_shell_names([value]) == ()
+def test_normalize_shell_names_rejects_unsafe_values(value: object) -> None:
+    """A configured or reported shell name is a bare ASCII basename or it is dropped."""
+    assert _platform.normalize_shell_names([value]) == []
 
 
-def test_normalize_extra_shell_names_accepts_and_dedupes() -> None:
-    """Real shell names survive, in configured order, without duplicates."""
-    assert _platform.normalize_extra_shell_names(
-        ["pwsh", "nu", "pwsh", " elvish ", "pwsh-preview"]
-    ) == ("pwsh", "nu", "elvish", "pwsh-preview")
-    # A non-list config value is ignored rather than raising.
-    assert _platform.normalize_extra_shell_names("pwsh") == ()
-
-
-def test_normalize_interactive_shells_honors_configured_extras() -> None:
-    """A configured shell passes the allowlist; an unconfigured one does not."""
-    assert _platform.normalize_interactive_shells(["pwsh", "zsh"]) == ["zsh"]
-    assert _platform.normalize_interactive_shells(["pwsh", "zsh"], extra=["pwsh"]) == [
+def test_normalize_shell_names_accepts_and_dedupes() -> None:
+    """Real shell names survive, in input order, without duplicates."""
+    assert _platform.normalize_shell_names(["pwsh", "nu", "pwsh", " elvish ", "pwsh-preview"]) == [
         "pwsh",
-        "zsh",
+        "nu",
+        "elvish",
+        "pwsh-preview",
     ]
-    # Extras are themselves validated: a path never becomes allowlisted.
-    assert _platform.normalize_interactive_shells(["/usr/bin/pwsh"], extra=["/usr/bin/pwsh"]) == []
+    # A non-list value is ignored rather than raising.
+    assert _platform.normalize_shell_names("pwsh") == []
+
+
+def test_reported_inventory_keeps_shells_outside_the_discovery_allowlist() -> None:
+    """A host's inventory is checked for shape downstream, not allowlist membership."""
+    reported = ["pwsh", "zsh", "/usr/bin/fish"]
+    assert _platform.normalize_interactive_shells(reported) == ["zsh"]
+    assert _platform.normalize_shell_names(reported) == ["pwsh", "zsh"]
 
 
 @pytest.mark.posix_only

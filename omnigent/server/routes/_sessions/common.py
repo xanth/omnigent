@@ -20,7 +20,7 @@ import cachetools
 import httpx
 from pydantic import TypeAdapter
 
-from omnigent._platform import normalize_interactive_shells
+from omnigent._platform import normalize_shell_names
 from omnigent._wrapper_labels import (
     ACP_SUBAGENT_ID_LABEL_KEY,
     ANTIGRAVITY_NATIVE_SUBAGENT_WRAPPER_VALUE,
@@ -1051,7 +1051,7 @@ def host_interactive_shells_for_request(
             "host shell inventory is on another replica",
             code=ErrorCode.WRONG_REPLICA,
         )
-    return normalize_interactive_shells(host_registry.interactive_shells(host_id))
+    return normalize_shell_names(host_registry.interactive_shells(host_id))
 
 
 def set_server_host_registry(host_registry: HostRegistry | None) -> None:

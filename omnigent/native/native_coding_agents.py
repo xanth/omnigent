@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from omnigent._platform import installed_interactive_shells
@@ -135,20 +134,20 @@ def native_shell_terminal_spec() -> dict[str, dict[str, object]]:
 
 def native_shell_terminal_specs(
     shells: list[str] | tuple[str, ...],
-    *,
-    extra: Sequence[str] = (),
 ) -> dict[str, TerminalEnvSpec]:
     """Build parsed terminal specs for a host's ordered shell inventory.
 
     Resolution runs in the host-launched runner and honors a matching absolute
     ``$SHELL`` path, including login shells outside the standard directories.
+    Every name in *shells* is one the host discovered, so each is resolved as
+    vouched for, including shells the user added to the allowlist in config.
     """
     from omnigent._platform import _resolve_interactive_shell
     from omnigent.inner.datamodel import OSEnvSandboxSpec, OSEnvSpec, TerminalEnvSpec
 
     return {
         shell: TerminalEnvSpec(
-            command=_resolve_interactive_shell(shell, extra=extra) or shell,
+            command=_resolve_interactive_shell(shell, extra=shells) or shell,
             allow_cwd_override=True,
             os_env=OSEnvSpec(
                 type="caller_process",

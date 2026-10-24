@@ -31,7 +31,7 @@ from typing import Any, Protocol
 
 from cachetools import TTLCache
 
-from omnigent._platform import normalize_interactive_shells
+from omnigent._platform import normalize_shell_names
 from omnigent.db.account_authority import (
     AccountAuthority,
     account_generation,
@@ -618,9 +618,9 @@ class HostRegistry:
                 _fail_pending_mcp_servers(old)
             self._hosts[key] = conn
             if hello.interactive_shells is not None:
-                self._interactive_shells[host_id] = normalize_interactive_shells(
-                    hello.interactive_shells
-                )
+                # The host is authoritative for which shells it has, including
+                # ones its user configured; only check that each is a safe name.
+                self._interactive_shells[host_id] = normalize_shell_names(hello.interactive_shells)
             else:
                 self._interactive_shells.pop(host_id, None)
         return conn

@@ -100,11 +100,21 @@ def test_interactive_shells_survive_disconnect() -> None:
     """A runner can outlive its host tunnel without losing the shell snapshot."""
     registry = HostRegistry()
     hello = _make_hello()
-    hello.interactive_shells = ["zsh", "invalid", "zsh", "bash"]
+    hello.interactive_shells = ["zsh", "/bin/sh", "zsh", "bash"]
     registry.register("host_shells", FakeWebSocket(), hello, owner="alice")
     registry.deregister("host_shells")
 
     assert registry.interactive_shells("host_shells") == ["zsh", "bash"]
+
+
+def test_interactive_shells_keep_host_configured_shells() -> None:
+    """The host's inventory is authoritative, including shells its user configured."""
+    registry = HostRegistry()
+    hello = _make_hello()
+    hello.interactive_shells = ["pwsh", "zsh", "nu;rm -rf"]
+    registry.register("host_shells", FakeWebSocket(), hello, owner="alice")
+
+    assert registry.interactive_shells("host_shells") == ["pwsh", "zsh"]
 
 
 def test_reconnect_without_shell_inventory_clears_snapshot() -> None:

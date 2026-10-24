@@ -24,7 +24,7 @@ import threading
 import time
 import uuid
 from collections import OrderedDict
-from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, SupportsIndex, SupportsInt, TypeVar, cast
@@ -174,7 +174,6 @@ from omnigent.runner.identity import (
     RUNNER_AUTH_REJECTED_EXIT_CODE,
     RUNNER_CONNECT_MARKER_ENV_VAR,
     RUNNER_DELEGATED_AUTH_ENV_VAR,
-    RUNNER_EXTRA_INTERACTIVE_SHELLS_ENV_VAR,
     RUNNER_HOST_OWNS_GLOBAL_CLEANUP_ENV_VAR,
     RUNNER_ID_ENV_VAR,
     RUNNER_INITIAL_AUTH_TOKEN_ENV_VAR,
@@ -877,7 +876,6 @@ def _build_runner_env(
     host_id: str | None = None,
     harness: str | None = None,
     interactive_shells: list[str] | None = None,
-    extra_interactive_shells: Sequence[str] = (),
     host_owns_global_cleanup: bool = False,
     harness_tmp_parent: Path | None = None,
     inference_config: dict[str, object] | None = None,
@@ -976,10 +974,6 @@ def _build_runner_env(
         env[RUNNER_LAUNCH_HARNESS_ENV_VAR] = harness
     if interactive_shells is not None:
         env[RUNNER_INTERACTIVE_SHELLS_ENV_VAR] = json.dumps(interactive_shells)
-    if extra_interactive_shells:
-        # The runner re-validates the inventory above against its own
-        # allowlist; without the user's additions it would drop them.
-        env[RUNNER_EXTRA_INTERACTIVE_SHELLS_ENV_VAR] = json.dumps(list(extra_interactive_shells))
     return env
 
 
@@ -1215,16 +1209,14 @@ class HostProcess:
         # files). Each entry remembers the repository root it was built for.
         self._fs_readers: OrderedDict[str, tuple[Path | None, WorkspaceReader]] = OrderedDict()
         self._fs_readers_lock = threading.Lock()
-        # Only discovery consults user config: an explicit inventory is
+        # The host is where shells are configured and discovered: user config
+        # extends the allowlist here, once, and the resulting inventory is what
+        # the server shows and the runner launches. An explicit inventory is
         # authoritative, which keeps the override path hermetic.
-        self._extra_interactive_shells = (
-            () if interactive_shells is not None else configured_interactive_shells()
-        )
-        self._interactive_shells = normalize_interactive_shells(
-            interactive_shells
+        self._interactive_shells = (
+            normalize_interactive_shells(interactive_shells)
             if interactive_shells is not None
-            else installed_interactive_shells(extra=self._extra_interactive_shells),
-            extra=self._extra_interactive_shells,
+            else installed_interactive_shells(extra=configured_interactive_shells())
         )
         if not self._interactive_shells:
             self._interactive_shells = ["bash"]
@@ -1999,7 +1991,6 @@ class HostProcess:
             host_id=self._identity.host_id,
             harness=frame.harness,
             interactive_shells=self._interactive_shells,
-            extra_interactive_shells=self._extra_interactive_shells,
             host_owns_global_cleanup=self._maintenance_janitor is not None,
             harness_tmp_parent=self._harness_tmp_parent,
             inference_config=frame.inference_config,

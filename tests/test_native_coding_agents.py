@@ -173,6 +173,18 @@ def test_native_shell_terminal_specs_builds_runtime_specs(
     assert spec["zsh"].os_env.sandbox.type == "none"
 
 
+def test_native_shell_terminal_specs_resolves_host_configured_shell(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A shell the host's user configured resolves like a built-in one."""
+    monkeypatch.setattr(
+        "omnigent._platform._resolve_interactive_shell",
+        lambda shell, *, extra=(): f"/resolved/{shell}" if shell in extra else None,
+    )
+    spec = native_shell_terminal_specs(["pwsh", "zsh"])
+    assert spec["pwsh"].command == "/resolved/pwsh"
+
+
 @pytest.mark.posix_only
 def test_native_shell_terminal_specs_preserves_login_shell_path(
     monkeypatch: pytest.MonkeyPatch,

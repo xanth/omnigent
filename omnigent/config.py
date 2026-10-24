@@ -288,7 +288,7 @@ def configured_interactive_shells(path: Path | None = None) -> tuple[str, ...]:
     :param path: Optional override for the user config path, for tests.
     :returns: Deduped, validated shell basenames in configured order.
     """
-    from omnigent._platform import normalize_extra_shell_names
+    from omnigent._platform import normalize_shell_names
 
     try:
         raw = load_global_config(path)
@@ -296,7 +296,7 @@ def configured_interactive_shells(path: Path | None = None) -> tuple[str, ...]:
         # Shell discovery must survive an unreadable or malformed config.
         _log.warning("Ignoring unreadable user config while reading configured shells")
         return ()
-    return normalize_extra_shell_names(raw.get(ADDITIONAL_INTERACTIVE_SHELLS_KEY))
+    return tuple(normalize_shell_names(raw.get(ADDITIONAL_INTERACTIVE_SHELLS_KEY)))
 
 
 def _github_accounts(cfg: _Config) -> dict[str, object]:

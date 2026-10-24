@@ -86,12 +86,12 @@ importlib.import_module("mcp.client.streamable_http")
 def test_host_interactive_shells_from_env_normalizes_inventory(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Runner wiring accepts only supported, ordered shell basenames."""
+    """Runner wiring keeps the host's ordered shells and drops unsafe names."""
     monkeypatch.setenv(
         RUNNER_INTERACTIVE_SHELLS_ENV_VAR,
-        '["zsh", "bash", "zsh", "not-a-shell"]',
+        '["zsh", "pwsh", "zsh", "../bash", "bash"]',
     )
-    assert _host_interactive_shells_from_env() == ["zsh", "bash"]
+    assert _host_interactive_shells_from_env() == ["zsh", "pwsh", "bash"]
 
 
 def test_apply_host_interactive_shells_only_replaces_native_wrappers(
