@@ -4,16 +4,21 @@
 Moves the Windows host patch set onto a release tag and pushes it.
 
 .DESCRIPTION
-Fix branches are every local feat/windows-host/* branch except main and patch-maintenance.
-Every fix branch and main must be checked out, clean, in its own worktree.
+Fix branches are every local feat/windows-host/* branch except release and patch-maintenance.
+Every fix branch and release must be checked out, clean, in its own worktree.
 
-1. Rebases each fix onto the tag tip from the base it was cut from: the parent of its first
-   own commit, where own commits are on no origin branch or tag. A fix already on the tag
-   tip is left alone.
-2. Resets main to the tag tip and octopus-merges every fix, so the tag tip is the first
+Fixes are based on the tag's fork point: where the tag's release branch left upstream main
+(git merge-base <tag> origin/main). A pull request from a fix to upstream main then carries
+only the fix's own commits, and merging the fix onto the tag tip adds only the fix.
+
+1. Rebases each fix onto the fork point from the base it was cut from: the parent of its
+   first own commit, where own commits are on no origin branch or tag. A fix already on the
+   fork point is left alone.
+2. Checks that no two fixes change the same file.
+3. Resets release to the tag tip and octopus-merges every fix, so the tag tip is the first
    parent.
-3. Checks the parents and that main holds every fix's changes.
-4. Pushes every fix and main to the fork in one atomic push, each with --force-with-lease
+4. Checks the parents, and that release changes each fix's files exactly as the fix does.
+5. Pushes every fix and release to the fork in one atomic push, each with --force-with-lease
    on the fork's state when the run started, unless -NoPush.
 
 All or nothing: if a rebase, the merge, a check or the push fails, the script aborts it,
@@ -34,13 +39,16 @@ $PSNativeCommandUseErrorActionPreference = $true
 
 $fork = 'xanth'
 $prefix = 'feat/windows-host'
-$composite = "$prefix/main"
+$composite = "$prefix/release"
 $notFixes = @($composite, "$prefix/patch-maintenance")
 
 function Invoke-Git { git -C $PSScriptRoot @args }
 function Get-OwnCommit([string] $ref) { @(Invoke-Git rev-list --reverse $ref --not --remotes=origin --tags) }
+function Get-PatchId { @(Invoke-Git diff @args | git -C $PSScriptRoot patch-id --stable) -split ' ' | Select-Object -First 1 }
 
+Invoke-Git fetch --quiet origin
 $tagTip = Invoke-Git rev-parse "$Tag^{commit}"
+$forkPoint = Invoke-Git merge-base $tagTip refs/remotes/origin/main
 $fixes = @(Invoke-Git for-each-ref --format='%(refname:short)' "refs/heads/$prefix/" |
     Where-Object { $_ -notin $notFixes })
 if ($fixes.Count -eq 0) { throw "No fix branches match $prefix/*." }
@@ -69,39 +77,41 @@ try {
         $own = @(Get-OwnCommit $fix)
         if ($own.Count -eq 0) { throw "$fix has no commits of its own. Retire it." }
         $base = Invoke-Git rev-parse "$($own[0])^"
-        if ($base -eq $tagTip) { continue }
-        try { git -C $worktrees[$fix] rebase --quiet --onto $tagTip $base }
-        catch { throw "$fix does not rebase cleanly onto $Tag. In its worktree run: git rebase --onto $Tag $base" }
+        if ($base -eq $forkPoint) { continue }
+        try { git -C $worktrees[$fix] rebase --quiet --onto $forkPoint $base }
+        catch { throw "$fix does not rebase cleanly onto the $Tag fork point. In its worktree run: git rebase --onto $forkPoint $base" }
     }
 
     $fixTips = foreach ($fix in $fixes) {
-        $commits = @(Invoke-Git rev-list --reverse "$tagTip..$fix")
-        if ($commits.Count -eq 0) { throw "$fix has no commits left on $Tag, so upstream has it. Retire it." }
-        $merges = @(Invoke-Git rev-list --merges "$tagTip..$fix")
+        $commits = @(Invoke-Git rev-list --reverse "$forkPoint..$fix")
+        if ($commits.Count -eq 0) { throw "$fix has no commits left on the $Tag fork point, so upstream has it. Retire it." }
+        $merges = @(Invoke-Git rev-list --merges "$forkPoint..$fix")
         if (@(Get-OwnCommit $fix).Count -ne $commits.Count -or $merges.Count -gt 0 -or
-            (Invoke-Git rev-parse "$($commits[0])^") -ne $tagTip) {
-            throw "$fix must be a linear series of its own commits on the $Tag tip."
+            (Invoke-Git rev-parse "$($commits[0])^") -ne $forkPoint) {
+            throw "$fix must be a linear series of its own commits on the $Tag fork point."
         }
         Invoke-Git rev-parse $fix
     }
 
-    $main = $worktrees[$composite]
-    git -C $main reset --hard --quiet $tagTip
-    try { git -C $main merge --no-ff --quiet -m "Merge Windows host patch set onto $Tag" @fixes }
-    catch {
-        $shared = $fixes | ForEach-Object { Invoke-Git diff --name-only $tagTip $_ } |
-            Group-Object | Where-Object Count -gt 1 | ForEach-Object Name
-        throw "The fixes do not merge cleanly. Files changed by more than one fix: $($shared -join ', ')"
-    }
+    $fixPaths = @{}
+    foreach ($fix in $fixes) { $fixPaths[$fix] = @(Invoke-Git diff --name-only $forkPoint $fix) }
+    $shared = $fixes | ForEach-Object { $fixPaths[$_] } | Group-Object | Where-Object Count -gt 1 | ForEach-Object Name
+    if ($shared) { throw "Files changed by more than one fix: $($shared -join ', ')" }
 
-    $parents = @((git -C $main rev-list --parents -n 1 HEAD) -split ' ' | Select-Object -Skip 1)
+    $release = $worktrees[$composite]
+    git -C $release reset --hard --quiet $tagTip
+    try { git -C $release merge --no-ff --quiet -m "Merge Windows host patch set onto $Tag" @fixes }
+    catch { throw "The fixes do not merge cleanly onto $Tag." }
+
+    $parents = @((git -C $release rev-list --parents -n 1 HEAD) -split ' ' | Select-Object -Skip 1)
     if ($parents[0] -ne $tagTip -or (Compare-Object $parents[1..($parents.Count - 1)] $fixTips)) {
         throw "Composite parents do not match: $parents"
     }
     foreach ($fix in $fixes) {
-        $paths = @(Invoke-Git diff --name-only $tagTip $fix)
-        $differing = @(git -C $main diff --name-only $fix HEAD -- @paths)
-        if ($differing.Count -gt 0) { throw "Composite is missing $fix changes in: $differing" }
+        $paths = $fixPaths[$fix]
+        if ((Get-PatchId $forkPoint $fix '--' @paths) -ne (Get-PatchId $tagTip $composite '--' @paths)) {
+            throw "Composite does not change $($paths -join ', ') exactly as $fix does."
+        }
     }
 
     if (-not $NoPush) {
