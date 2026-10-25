@@ -4,8 +4,8 @@
 Moves the Windows host fix branches onto a release tag and pushes them.
 
 .DESCRIPTION
-Fix branches are every local feat/windows-host/* branch except patch-maintenance. Each must
-be checked out, clean, in its own worktree.
+Fix branches are every local feat/windows-host/* branch. Each must be checked out, clean, in
+its own worktree.
 
 Fixes are based on the tag's fork point: where the tag's release branch left upstream main
 (git merge-base <tag> origin/main). A pull request from a fix to upstream main then carries
@@ -38,7 +38,6 @@ $PSNativeCommandUseErrorActionPreference = $true
 
 $fork = 'xanth'
 $prefix = 'feat/windows-host'
-$notFixes = @("$prefix/patch-maintenance")
 
 function Invoke-Git { git -C $PSScriptRoot @args }
 function Get-OwnCommit([string] $ref) { @(Invoke-Git rev-list --reverse $ref --not --remotes=origin --tags) }
@@ -47,8 +46,7 @@ function Get-PatchId { @(Invoke-Git diff @args | git -C $PSScriptRoot patch-id -
 Invoke-Git fetch --quiet origin
 $tagTip = Invoke-Git rev-parse "$Tag^{commit}"
 $forkPoint = Invoke-Git merge-base $tagTip refs/remotes/origin/main
-$fixes = @(Invoke-Git for-each-ref --format='%(refname:short)' "refs/heads/$prefix/" |
-    Where-Object { $_ -notin $notFixes })
+$fixes = @(Invoke-Git for-each-ref --format='%(refname:short)' "refs/heads/$prefix/")
 if ($fixes.Count -eq 0) { throw "No fix branches match $prefix/*." }
 
 $worktrees = @{}

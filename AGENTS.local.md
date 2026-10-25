@@ -20,7 +20,8 @@ Every consumer uses this layout.
 | Path | Content |
 |---|---|
 | `.` | Root checkout of upstream, remote `origin`. Read-only: any branch, no patch commits |
-| `.worktrees/xanth/<branch>` | One worktree per patch branch; the path matches the branch name |
+| `.worktrees/xanth/<branch>` | One worktree per fix branch; the path matches the branch name |
+| `.worktrees/patch-maintenance` | The `patch-maintenance` branch |
 | `AGENTS.local.md` | The consumer's private notes: machine setup, running from source, schedules. Untracked |
 
 ## Branches
@@ -28,9 +29,9 @@ Every consumer uses this layout.
 | Branch | Base | Content |
 |---|---|---|
 | `feat/windows-host/<fix>` | `<fork-point>` | One fix as a curated, linear commit series with code and tests |
-| `feat/windows-host/patch-maintenance` | orphan | This file and `Update-PatchSet.ps1`. Never upstreamed; plain append-only history |
+| `patch-maintenance` | orphan | This file and `Update-PatchSet.ps1`. Never upstreamed; plain append-only history |
 
-`Update-PatchSet.ps1` treats every other `feat/windows-host/*` branch as a fix.
+`Update-PatchSet.ps1` treats every `feat/windows-host/*` branch as a fix.
 
 ## Series
 
@@ -62,7 +63,7 @@ Update this table when you add, change or retire a fix.
 
 ## Update and push
 
-Run `pwsh .worktrees/xanth/feat/windows-host/patch-maintenance/Update-PatchSet.ps1 -Tag <tag>`
+Run `pwsh .worktrees/patch-maintenance/Update-PatchSet.ps1 -Tag <tag>`
 after every change to a fix. It rebases, checks and pushes the whole set in one
 all-or-nothing run; `Get-Help <script> -Full` describes each step.
 
