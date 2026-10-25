@@ -1,8 +1,8 @@
 # Windows host patch set maintenance
 
 A flat patch set that makes Omnigent run as a native Windows host. Each fix is
-its own branch, ready to upstream. A composite branch octopus-merges every fix
-onto a release tag tip.
+its own branch, ready to upstream, and merges onto a release tag tip beside the
+others.
 
 The fork is `xanth/omnigent`, remote `xanth`. Placeholders: `<tag>` is the
 release tag the set is based on (for example `v0.19.1`), `<fix>` is a fix name.
@@ -28,10 +28,9 @@ Every consumer uses this layout.
 | Branch | Base | Content |
 |---|---|---|
 | `feat/windows-host/<fix>` | `<fork-point>` | One fix as a curated, linear commit series with code and tests |
-| `feat/windows-host/release` | `<tag>` tip | One octopus merge of every fix branch, with the `<tag>` tip as first parent |
-| `feat/windows-host/patch-maintenance` | orphan | This file and `Build-PatchSet.ps1`. Never upstreamed; plain append-only history |
+| `feat/windows-host/patch-maintenance` | orphan | This file and `Update-PatchSet.ps1`. Never upstreamed; plain append-only history |
 
-`Build-PatchSet.ps1` treats every other `feat/windows-host/*` branch as a fix.
+`Update-PatchSet.ps1` treats every other `feat/windows-host/*` branch as a fix.
 
 ## Series
 
@@ -61,6 +60,23 @@ Update this table when you add, change or retire a fix.
   `git -c sequence.editor=: rebase -i --autosquash <fork-point>`.
 - **Red first**: the fix's test fails at `<fork-point>` and passes with the fix.
 
+## Update and push
+
+Run `pwsh .worktrees/xanth/feat/windows-host/patch-maintenance/Update-PatchSet.ps1 -Tag <tag>`
+after every change to a fix. It rebases, checks and pushes the whole set in one
+all-or-nothing run; `Get-Help <script> -Full` describes each step.
+
+When a run fails, every fix is back where it started. Fix the cause by hand,
+then run it again:
+
+- **A fix does not rebase**: in its worktree, run the `git rebase --onto`
+  command the script prints, resolve the conflicts, and curate the series.
+- **A fix has no commits left**: upstream has it. [Retire the fix](#retire-a-fix).
+- **Fixes share a file**: combine them into one fix, or change them so each
+  touches its own files.
+- **A fix does not merge onto the tag**: it conflicts with the release branch's
+  own changes. Make the fix apply to both.
+
 ## Add a fix
 
 1. Create the branch at the fork point, in its worktree:
@@ -68,54 +84,16 @@ Update this table when you add, change or retire a fix.
 2. Write the test, then confirm it goes red at `<fork-point>`.
 3. Make the fix, then confirm the test passes. Run the module's full test file
    and upstream's checks on the changed files, then commit.
-4. Add the fix to [Series](#series) and run the [build](#build-and-push) with
-   the current `<tag>`.
-
-Done when the fix branch is a curated series on `<fork-point>` and the build
-finishes without an error.
-
-## Build and push
-
-`pwsh .worktrees/xanth/feat/windows-host/patch-maintenance/Build-PatchSet.ps1 -Tag <tag>`
-
-1. Rebases each fix onto `<fork-point>` from the base it was cut from. A fix
-   already on the fork point is left alone.
-2. Checks that no two fixes change the same file.
-3. Resets `feat/windows-host/release` to the `<tag>` tip and octopus-merges every
-   fix, so the tag tip is the first parent.
-4. Checks the parents, and that `release` changes each fix's files exactly as the
-   fix does.
-5. Pushes every fix and `release` in one atomic push, each with
-   `--force-with-lease` on the fork's state when the run started. `-NoPush`
-   skips this step.
-
-The run is all or nothing. If a rebase, the merge, a check or the push fails,
-the script resets every branch to where it started and names the cause. A
-refused atomic push changes no branch on the fork. Fix the cause by hand, then
-run the build again:
-
-- **A fix does not rebase**: in its worktree, run the `git rebase --onto`
-  command the script prints, resolve the conflicts, and curate the series.
-- **A fix has no commits left**: upstream has it. [Retire the fix](#retire-a-fix).
-- **Fixes share a file**: combine them into one fix, or change them so each
-  touches its own files.
-- **The fixes do not merge onto the tag**: a fix conflicts with the release
-  branch's own changes. Make the fix apply to both, and keep `release` free of
-  conflict resolutions.
+4. Add the fix to [Series](#series), then [update and push](#update-and-push)
+   with the current `<tag>`.
 
 ## Move to a new tag
 
-1. Fetch: `git fetch origin --tags`.
-2. Run the [build](#build-and-push) with `-Tag <new-tag>`, and repeat it after
-   each fix by hand until it finishes without an error.
-3. Curate every fix against the new fork point (see
-   [Patch rules](#patch-rules)) and run its tests. If any fix changed, run the
-   build again.
-
-Done when the build finishes without an error and
-`git rev-list --parents -n 1 feat/windows-host/release` shows one merge whose first
-parent is the `<new-tag>` tip and whose other parents are every fix in
-[Series](#series).
+1. [Update and push](#update-and-push) with `-Tag <new-tag>`, and run it again
+   after each fix by hand until it finishes without an error.
+2. Curate every fix against the new fork point (see
+   [Patch rules](#patch-rules)) and run its tests. If any fix changed, update
+   and push again.
 
 ## Retire a fix
 
@@ -124,7 +102,7 @@ When upstream makes a fix unnecessary, delete it everywhere:
 1. `git worktree remove .worktrees/xanth/feat/windows-host/<fix>`
 2. `git branch -D feat/windows-host/<fix>`
 3. `git push xanth --delete feat/windows-host/<fix>`
-4. Remove its row from [Series](#series), and run the [build](#build-and-push).
+4. Remove its row from [Series](#series).
 
 ## Keep this file
 
