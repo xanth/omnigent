@@ -39,6 +39,9 @@ Every consumer uses this layout.
 |---|---|---|
 | `os-env-lazy-tmpdir` | With `sandbox: none`, every `sys_os_*` call fails on `assert self._tmpdir is not None`. The OS-tool helper gets its config through a file in a scratch directory that only an active sandbox creates. | The same hunk and test are in omnigent-ai/omnigent#5852 (open). |
 | `pi-cmd-shim` | `shutil.which("pi")` returns npm's `pi.cmd`, and Windows runs it through `cmd.exe`. A newline in `--append-system-prompt` ends the command line, so pi loses `--extension`, `--no-tools` and `--tools` and runs its own tools. | None. |
+| `claude-native-relay-port` | `SO_REUSEADDR` lets a second process bind a port another serves, so a second concurrent `claude-native` session's hook reaches the first session's relay, gets 401, and every prompt is blocked. | None. |
+| `user-shells` | The "New shell" picker offers only bash; PowerShell 7, Windows PowerShell and cmd are missing. | None. |
+| `native-terminals` | Native harnesses and terminals are gated off. With a Windows tmux (RMUX plus its fix set, `xanth/rmux` branch `patch-maintenance`): the pane command's POSIX quoting reaches cmd.exe, panes get a TERM Windows programs do not know, servers that keep no socket file are never stopped, and the AF_UNIX copy bridge and POSIX status relay fail. Series: argv after `--`, `xterm-256color` TERM, kill-server without a socket file, then the gates go with the two POSIX helpers. | None. |
 
 Update this table when you add, change or retire a fix.
 
