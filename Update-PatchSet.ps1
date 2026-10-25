@@ -1,4 +1,3 @@
-#Requires -Version 7.4
 <#
 .SYNOPSIS
 Moves the Windows host fix branches onto a release tag and pushes them.
@@ -27,6 +26,7 @@ the fork. Fix the affected branches by hand, then run it again.
 .EXAMPLE
 pwsh Update-PatchSet.ps1 -Tag v0.20.0
 #>
+#Requires -Version 7.4
 param(
     [Parameter(Mandatory)]
     [string] $Tag,
