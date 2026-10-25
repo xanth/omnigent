@@ -4111,7 +4111,7 @@ def _assert_server_port_bindable(host: str, port: int) -> None:
 
     Mirrors uvicorn's TCP bind shape closely enough for CLI preflight:
     IPv6 is selected when the host contains ``":"``, and
-    ``SO_REUSEADDR`` is set before bind. This is intentionally a bind
+    ``SO_REUSEADDR`` is set before bind except on Windows. This is intentionally a bind
     probe, not a connect probe, so a failed client connection to the
     port does not make us report the port as occupied.
 
@@ -4124,7 +4124,9 @@ def _assert_server_port_bindable(host: str, port: int) -> None:
 
     family = socket.AF_INET6 if ":" in host else socket.AF_INET
     with socket.socket(family=family, type=socket.SOCK_STREAM) as probe:
-        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        # On Windows SO_REUSEADDR lets the probe bind a port another server listens on.
+        if not IS_WINDOWS:
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             probe.bind((host, port))
         except OSError as exc:
