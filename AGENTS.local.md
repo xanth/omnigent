@@ -45,6 +45,7 @@ Every consumer uses this layout.
 | `native-start-error` | Every native-terminal start failure is reported as "not supported on Windows", hiding the real cause. Windows now gets the structured cause and runner-log reference other platforms get. | None. |
 | `native-bridge-data-dir` | The Pi, Codex, Antigravity and OpenCode native bridges keep session dirs under `~/.omnigent` whatever `OMNIGENT_DATA_DIR` says, so a second instance writes into the first's data folder and each host's sweep reaps the other's dirs. The roots now follow `data_dir()`. | None. |
 | `runner-temp-dir` | The host passes runners TMPDIR but not TEMP/TMP, so every runner uses the profile's temp dir whatever the host's TEMP is; a host with its own TEMP never sweeps its runners' terminal dirs, and they land in another instance's sweep root. TEMP and TMP now pass like TMPDIR. | None. |
+| `program-status-liveness` | The program-status reader checks its relay with `os.kill(pid, 0)`, which on Windows sends CTRL_C_EVENT to the whole console group, so each read interrupts the reader and its console. It now uses `process_alive`. | None. |
 | `native-attachments` | Every attachment sent to a native session fails: the cache writer uses `dir_fd` and `os.O_DIRECTORY`/`O_NOFOLLOW`, which Windows lacks (AttributeError), and text-mode descriptors would corrupt binary payloads. Where `dir_fd` is missing, links and junctions are refused by `lstat` checks and descriptors open in binary mode. | None. |
 
 Update this table when you add, change or retire a fix.
